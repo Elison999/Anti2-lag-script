@@ -1,0 +1,364 @@
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+local SaveManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/SaveManager.lua"))()
+local InterfaceManager = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/master/Addons/InterfaceManager.lua"))()
+
+local Window = Fluent:CreateWindow({
+    Title = "Performance Optimizer " .. Fluent.Version,
+    SubTitle = "by dawid",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(580, 460),
+    Acrylic = true,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.LeftControl
+})
+
+local Tabs = {
+    Main = Window:AddTab({ Title = "Main", Icon = "settings" }),
+}
+
+-- Services
+local RunService = game:GetService("RunService")
+local Lighting = game:GetService("Lighting")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local player = Players.LocalPlayer
+
+-- Variables for toggles
+local fpsUnlockEnabled = false
+local selectedFPS = 60
+local autoRemoveRemotes = false
+local autoRemoveTextures = false
+local autoRemoveEffects = false
+local autoRemoveImages = false
+local autoRemoveNPCs = false
+
+-- Connection variables
+local fpsConnection = nil
+local remoteConnection = nil
+local textureConnection = nil
+local effectsConnection = nil
+local imagesConnection = nil
+local npcConnection = nil
+
+-- FPS Unlock Toggle
+local FPSToggle = Tabs.Main:AddToggle("FPSToggle", {
+    Title = "FPS Unlock",
+    Description = "Unlock FPS limit",
+    Default = false
+})
+
+-- FPS Dropdown
+local FPSDropdown = Tabs.Main:AddDropdown("FPSDropdown", {
+    Title = "FPS Limit",
+    Description = "Select target FPS",
+    Values = {"60fps", "90fps", "120fps", "144fps"},
+    Multi = false,
+    Default = 1,
+})
+
+-- Auto Remove Remote Events Toggle
+local RemoteToggle = Tabs.Main:AddToggle("RemoteToggle", {
+    Title = "Auto Remove Remote Events",
+    Description = "Automatically removes remote events (updates every 20s)",
+    Default = false
+})
+
+-- Auto Remove Textures Toggle
+local TextureToggle = Tabs.Main:AddToggle("TextureToggle", {
+    Title = "Remove All Textures",
+    Description = "Removes all game textures (updates every 20s)",
+    Default = false
+})
+
+-- Auto Remove Effects Toggle
+local EffectsToggle = Tabs.Main:AddToggle("EffectsToggle", {
+    Title = "Remove Effects & Particles",
+    Description = "Removes effects, particles and lights (updates every 20s)",
+    Default = false
+})
+
+-- Auto Remove Images Toggle
+local ImagesToggle = Tabs.Main:AddToggle("ImagesToggle", {
+    Title = "Remove Images & Texts",
+    Description = "Removes images and texts except UI (updates every 20s)",
+    Default = false
+})
+
+-- Auto Remove NPCs Toggle
+local NPCToggle = Tabs.Main:AddToggle("NPCToggle", {
+    Title = "Remove NPCs",
+    Description = "Removes all NPCs from the game (updates every 20s)",
+    Default = false
+})
+
+-- FPS Functions
+local function setFPSLimit(fps)
+    if fpsConnection then
+        fpsConnection:Disconnect()
+        fpsConnection = nil
+    end
+    
+    if fps > 0 then
+        local targetFrameTime = 1 / fps
+        fpsConnection = RunService.Heartbeat:Connect(function()
+            local startTime = tick()
+            repeat until tick() - startTime >= targetFrameTime
+        end)
+    end
+end
+
+-- Remove Remote Events Function
+local function removeRemoteEvents()
+    for _, obj in pairs(ReplicatedStorage:GetDescendants()) do
+        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+            obj:Destroy()
+        end
+    end
+end
+
+-- Remove Textures Function
+local function removeTextures()
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("Texture") or obj:IsA("Decal") or obj:IsA("SurfaceGui") then
+            obj:Destroy()
+        elseif obj:IsA("MeshPart") or obj:IsA("Part") then
+            obj.Material = Enum.Material.Plastic
+            if obj:IsA("MeshPart") then
+                obj.TextureID = ""
+            end
+        end
+    end
+end
+
+-- Remove Effects Function
+local function removeEffects()
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("ParticleEmitter") or obj:IsA("Fire") or obj:IsA("Smoke") or 
+           obj:IsA("Sparkles") or obj:IsA("PointLight") or obj:IsA("SpotLight") or 
+           obj:IsA("SurfaceLight") or obj:IsA("Beam") or obj:IsA("Trail") then
+            obj:Destroy()
+        end
+    end
+    
+    -- Remove lighting effects
+    Lighting.GlobalShadows = false
+    Lighting.FogEnd = 9e9
+    Lighting.FogStart = 0
+    Lighting.Brightness = 0
+end
+
+-- Remove Images and Texts Function
+local function removeImagesTexts()
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if (obj:IsA("ImageLabel") or obj:IsA("ImageButton") or obj:IsA("TextLabel") or obj:IsA("TextButton")) and 
+           not obj:IsDescendantOf(player.PlayerGui) then
+            obj:Destroy()
+        end
+    end
+end
+
+-- Remove NPCs Function
+local function removeNPCs()
+    for _, obj in pairs(workspace:GetChildren()) do
+        if obj:IsA("Model") and obj:FindFirstChild("Humanoid") and not Players:GetPlayerFromCharacter(obj) then
+            obj:Destroy()
+        end
+    end
+end
+
+-- Toggle Event Handlers
+FPSToggle:OnChanged(function(value)
+    fpsUnlockEnabled = value
+    if value then
+        local fpsValue = tonumber(selectedFPS:match("%d+"))
+        setFPSLimit(fpsValue)
+    else
+        if fpsConnection then
+            fpsConnection:Disconnect()
+            fpsConnection = nil
+        end
+    end
+end)
+
+FPSDropdown:OnChanged(function(value)
+    selectedFPS = value
+    if fpsUnlockEnabled then
+        local fpsValue = tonumber(value:match("%d+"))
+        setFPSLimit(fpsValue)
+    end
+end)
+
+RemoteToggle:OnChanged(function(value)
+    autoRemoveRemotes = value
+    if value then
+        remoteConnection = task.spawn(function()
+            while autoRemoveRemotes do
+                removeRemoteEvents()
+                wait(20)
+            end
+        end)
+    else
+        if remoteConnection then
+            task.cancel(remoteConnection)
+            remoteConnection = nil
+        end
+    end
+end)
+
+TextureToggle:OnChanged(function(value)
+    autoRemoveTextures = value
+    if value then
+        textureConnection = task.spawn(function()
+            while autoRemoveTextures do
+                removeTextures()
+                wait(20)
+            end
+        end)
+    else
+        if textureConnection then
+            task.cancel(textureConnection)
+            textureConnection = nil
+        end
+    end
+end)
+
+EffectsToggle:OnChanged(function(value)
+    autoRemoveEffects = value
+    if value then
+        effectsConnection = task.spawn(function()
+            while autoRemoveEffects do
+                removeEffects()
+                wait(20)
+            end
+        end)
+    else
+        if effectsConnection then
+            task.cancel(effectsConnection)
+            effectsConnection = nil
+        end
+    end
+end)
+
+ImagesToggle:OnChanged(function(value)
+    autoRemoveImages = value
+    if value then
+        imagesConnection = task.spawn(function()
+            while autoRemoveImages do
+                removeImagesTexts()
+                wait(20)
+            end
+        end)
+    else
+        if imagesConnection then
+            task.cancel(imagesConnection)
+            imagesConnection = nil
+        end
+    end
+end)
+
+NPCToggle:OnChanged(function(value)
+    autoRemoveNPCs = value
+    if value then
+        npcConnection = task.spawn(function()
+            while autoRemoveNPCs do
+                removeNPCs()
+                wait(20)
+            end
+        end)
+    else
+        if npcConnection then
+            task.cancel(npcConnection)
+            npcConnection = nil
+        end
+    end
+end)
+
+-- Floating Toggle Button
+local ScreenGui = Instance.new("ScreenGui")
+local ToggleButton = Instance.new("TextButton")
+local UICorner = Instance.new("UICorner")
+
+ScreenGui.Name = "FloatingToggle"
+ScreenGui.Parent = game.CoreGui
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+ToggleButton.Name = "ToggleButton"
+ToggleButton.Parent = ScreenGui
+ToggleButton.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+ToggleButton.BorderSizePixel = 0
+ToggleButton.Position = UDim2.new(0, 100, 0, 100)
+ToggleButton.Size = UDim2.new(0, 80, 0, 80)
+ToggleButton.Font = Enum.Font.GothamBold
+ToggleButton.Text = "TOGGLE"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.TextScaled = true
+ToggleButton.Active = true
+ToggleButton.Draggable = true
+
+UICorner.CornerRadius = UDim.new(0, 15)
+UICorner.Parent = ToggleButton
+
+-- Hover effects for the floating button
+ToggleButton.MouseEnter:Connect(function()
+    local tween = TweenService:Create(ToggleButton, TweenInfo.new(0.2), {
+        BackgroundColor3 = Color3.fromRGB(50, 50, 50),
+        Size = UDim2.new(0, 85, 0, 85)
+    })
+    tween:Play()
+end)
+
+ToggleButton.MouseLeave:Connect(function()
+    local tween = TweenService:Create(ToggleButton, TweenInfo.new(0.2), {
+        BackgroundColor3 = Color3.fromRGB(35, 35, 35),
+        Size = UDim2.new(0, 80, 0, 80)
+    })
+    tween:Play()
+end)
+
+-- Button click to simulate Left Control press
+ToggleButton.MouseButton1Click:Connect(function()
+    -- Visual feedback
+    local tween = TweenService:Create(ToggleButton, TweenInfo.new(0.1), {
+        BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+    })
+    tween:Play()
+    
+    wait(0.1)
+    
+    local tween2 = TweenService:Create(ToggleButton, TweenInfo.new(0.1), {
+        BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    })
+    tween2:Play()
+    
+    -- Simulate Left Control key press
+    if Window then
+        Window:Minimize()
+    end
+end)
+
+-- Notification
+Fluent:Notify({
+    Title = "Performance Optimizer",
+    Content = "Script loaded successfully! Use the floating button to minimize/maximize the GUI.",
+    Duration = 5
+})
+
+-- Save Manager Setup
+SaveManager:SetLibrary(Fluent)
+InterfaceManager:SetLibrary(Fluent)
+
+SaveManager:IgnoreThemeSettings()
+SaveManager:SetIgnoreIndexes({})
+
+InterfaceManager:SetFolder("FluentScriptHub")
+SaveManager:SetFolder("FluentScriptHub/performance")
+
+InterfaceManager:BuildInterfaceSection(Tabs.Main)
+SaveManager:BuildConfigSection(Tabs.Main)
+
+Window:SelectTab(1)
+
+SaveManager:LoadAutoloadConfig()
