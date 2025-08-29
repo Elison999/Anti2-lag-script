@@ -23,6 +23,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local UserSettings = UserSettings()
+local GameSettings = UserSettings.GameSettings
 
 local player = Players.LocalPlayer
 
@@ -34,6 +36,8 @@ local autoRemoveTextures = false
 local autoRemoveEffects = false
 local autoRemoveImages = false
 local autoRemoveNPCs = false
+local renderOptimizationEnabled = false
+local renderDistance = 30
 
 -- Connection variables
 local fpsConnection = nil
@@ -42,6 +46,7 @@ local textureConnection = nil
 local effectsConnection = nil
 local imagesConnection = nil
 local npcConnection = nil
+local renderConnection = nil
 
 -- FPS Unlock Toggle
 local FPSToggle = Tabs.Main:AddToggle("FPSToggle", {
@@ -92,6 +97,29 @@ local NPCToggle = Tabs.Main:AddToggle("NPCToggle", {
     Title = "Remove NPCs",
     Description = "Removes all NPCs from the game (updates every 20s)",
     Default = false
+})
+
+-- Render Optimization Toggle
+local RenderToggle = Tabs.Main:AddToggle("RenderToggle", {
+    Title = "Enable Render Optimization",
+    Description = "Optimizes rendering for better performance",
+    Default = false
+})
+
+-- Render Distance Slider
+local RenderSlider = Tabs.Main:AddSlider("RenderSlider", {
+    Title = "Render Distance",
+    Description = "Adjust streaming target radius (lower = better FPS)",
+    Default = 30,
+    Min = 10,
+    Max = 400,
+    Rounding = 1,
+    Callback = function(value)
+        renderDistance = value
+        if renderOptimizationEnabled then
+            workspace.StreamingTargetRadius = value
+        end
+    end
 })
 
 -- FPS Functions
@@ -167,6 +195,83 @@ local function removeNPCs()
             obj:Destroy()
         end
     end
+end
+
+-- Low Graphics Function
+local function enableLowGraphics()
+    -- Desativar sombras
+    Lighting.GlobalShadows = false
+    Lighting.FogEnd = 999999
+    Lighting.Brightness = 1
+
+    -- Desativar efeitos de pós-processamento
+    for _, v in pairs(Lighting:GetChildren()) do
+        if v:IsA("BlurEffect") or v:IsA("SunRaysEffect") or v:IsA("ColorCorrectionEffect")
+            or v:IsA("BloomEffect") or v:IsA("DepthOfFieldEffect") then
+            v.Enabled = false
+        end
+    end
+
+    -- Desativar partículas
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("ParticleEmitter") or v:IsA("Trail") then
+            v.Enabled = false
+        elseif v:IsA("Explosion") then
+            v.Visible = false
+        end
+    end
+
+    -- Simplificar texturas
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("Texture") or v:IsA("Decal") then
+            v.Transparency = 1
+        end
+    end
+
+    -- Reduzir qualidade gráfica do cliente
+    GameSettings.SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel1
+
+    -- Reduzir distância de renderização
+    workspace.StreamingTargetRadius = renderDistance
+    workspace.StreamingEnabled = true
+end
+
+-- Disable Low Graphics Function
+local function disableLowGraphics()
+    -- Restaurar sombras
+    Lighting.GlobalShadows = true
+    Lighting.FogEnd = 100000
+    Lighting.Brightness = 2
+
+    -- Reativar efeitos de pós-processamento
+    for _, v in pairs(Lighting:GetChildren()) do
+        if v:IsA("BlurEffect") or v:IsA("SunRaysEffect") or v:IsA("ColorCorrectionEffect")
+            or v:IsA("BloomEffect") or v:IsA("DepthOfFieldEffect") then
+            v.Enabled = true
+        end
+    end
+
+    -- Reativar partículas
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("ParticleEmitter") or v:IsA("Trail") then
+            v.Enabled = true
+        elseif v:IsA("Explosion") then
+            v.Visible = true
+        end
+    end
+
+    -- Restaurar texturas
+    for _, v in pairs(workspace:GetDescendants()) do
+        if v:IsA("Texture") or v:IsA("Decal") then
+            v.Transparency = 0
+        end
+    end
+
+    -- Restaurar qualidade gráfica
+    GameSettings.SavedQualityLevel = Enum.SavedQualitySetting.Automatic
+
+    -- Restaurar distância de renderização
+    workspace.StreamingTargetRadius = 400
 end
 
 -- Toggle Event Handlers
@@ -273,6 +378,35 @@ NPCToggle:OnChanged(function(value)
             task.cancel(npcConnection)
             npcConnection = nil
         end
+    end
+end)
+
+RenderToggle:OnChanged(function(value)
+    renderOptimizationEnabled = value
+    if value then
+        enableLowGraphics()
+        -- Otimizar continuamente em tempo real
+        renderConnection = RunService.Heartbeat:Connect(function()
+            GameSettings.SavedQualityLevel = Enum.SavedQualitySetting.QualityLevel1
+        end)
+        
+        Fluent:Notify({
+            Title = "Render Optimization",
+            Content = "Low graphics mode enabled!",
+            Duration = 3
+        })
+    else
+        disableLowGraphics()
+        if renderConnection then
+            renderConnection:Disconnect()
+            renderConnection = nil
+        end
+        
+        Fluent:Notify({
+            Title = "Render Optimization",
+            Content = "Low graphics mode disabled!",
+            Duration = 3
+        })
     end
 end)
 
